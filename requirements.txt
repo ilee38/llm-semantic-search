@@ -1,0 +1,6 @@
+beautifulsoup4
+markdown
+numpy
+openai
+pandas
+tiktoken
