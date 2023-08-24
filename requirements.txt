@@ -3,4 +3,5 @@ markdown
 numpy
 openai
 pandas
+tenacity
 tiktoken
