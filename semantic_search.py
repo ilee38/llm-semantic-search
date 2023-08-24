@@ -1,3 +1,4 @@
+import ast
 import numpy as np
 import openai
 import os
@@ -5,7 +6,6 @@ import pandas as pd
 import pickle
 import sys
 import tiktoken
-import time
 from cli import parser
 from process_markdown import process_markdown_folder
 from tenacity import (retry, stop_after_attempt, wait_random_exponential)
@@ -36,31 +36,30 @@ def truncate_tokens(text, encoding_name=EMBEDDING_ENCODING, max_tokens=MAX_TOKEN
 
 @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
 def get_embedding_from_api(text):
-   print(f"requesting embedding from api for {text}...")
-   return np.array([0.454, 4.565, 0.645, -5.5657])
-   """
-   return await openai.Embedding.create(
+   return openai.Embedding.create(
       model=OPENAI_EMBEDDINGS_MODEL,
       input=text
       )["data"][0]["embedding"]
-   """
 
 
 def embed(data):
    """Obtains embeddings from OpenAI Embeddings Api
       Returns a data frame with the generated embeddings
    """
-   responses = {}
+   responses = []
 
-   for (title, id), text in data.items():
+   for item in data:
+      # Add title to text for additional context
+      text = f"{item['Title']}. {item['Text']}"
       num_tokens = get_num_tokens(text)
       if num_tokens > MAX_TOKENS:
          text = truncate_tokens(text)
       try:
          embedding = get_embedding_from_api(text)
-         responses[(title, id)] = embedding
+         item["Embedding"] = embedding
+         responses.append(item)
       except Exception as e:
-         print(f"Error fetching embedding for {title} {id} from api: ", e)
+         print(f"Error fetching embedding from api: ", e)
          continue
 
    df = pd.DataFrame(responses)
@@ -93,14 +92,14 @@ def cosine_similarity(v1, v2):
 
 def search(query):
    """Performs semantic search with embeddings.
-      Returns the search results in descending order of relevance, based on the
-      cosine similarity distance between embeddings
+      Returns the similarity value associated to each record in descending order of relevance.
+      The search index data frame loaded from csv file is also returned.
+      Similarity is obtained using cosine similarity distance between embeddings.
    """
-   # Load search index into dataframe
+   # Load search index
    try:
-      df = pd.read_csv(DF_FILENAME, header=[0, 1])
-      df.columns = pd.MultiIndex.from_tuples([tuple(["" if y.find("Unnamed") == 0 else y for y in x]) for x in df.columns])
-      print(df)
+      df = pd.read_csv(DF_FILENAME)
+      search_index = df.to_dict(orient='records')
    except FileNotFoundError as e:
       print(f"{e}. Run again with flag -p set to True to process files")
       sys.exit(1)
@@ -120,9 +119,20 @@ def search(query):
       with open(QUERY_CACHE_FILENAME, 'wb') as f:
          pickle.dump(query_cache, f)
 
-   similarities = np.apply_along_axis(lambda x: cosine_similarity(x, query_vector), axis=0, arr=df)
-   result = pd.Series(similarities, index=df.columns).sort_values(ascending=False)
-   return result
+   similarities = []
+   for record in search_index:
+      similarities.append(
+         cosine_similarity(ast.literal_eval(record["Embedding"]), query_vector)
+      )
+   result = pd.Series(similarities, index=df.index).sort_values(ascending=False)
+   return result, df
+
+
+def print_results(results, df, num_results):
+   length = num_results if num_results <= len(results) else len(results)
+   for i in results[:length].index:
+      print(f"{df.iloc[i]['Text']}\n")
+      print("----------\n")
 
 
 def main():
@@ -134,10 +144,8 @@ def main():
       generate_data_embeddings(args.folderpath)
 
    if args.query is not None:
-      results = search(args.query)
-      num_results = args.num if args.num <= len(results) else len(results)
-      for i in range(num_results):
-         print(f"{results[i]}\n")
+      results, df = search(args.query)
+      print_results(results, df, args.num)
    return
 
 
