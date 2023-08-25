@@ -70,9 +70,10 @@ def generate_data_embeddings(folder_path):
    """Generates embeddings for text data and saves them to a csv data file.
    """
    texts = process_markdown_folder(folder_path)
-   print("Done processing .MD files...")
+   print("done processing .MD files...")
+   print("generating embeddings. it may take a while...")
    df = embed(texts)
-   print("Done generating embeddings, saving df to file...")
+   print("done generating embeddings, saving df to file...")
    df.to_csv(DF_FILENAME)
 
 
