@@ -130,6 +130,8 @@ def search(query):
 
 def print_results(results, df, num_results):
    length = num_results if num_results <= len(results) else len(results)
+
+   print("\n----------")
    for i in results[:length].index:
       print(f"{df.iloc[i]['Text']}\n")
       print("----------\n")
